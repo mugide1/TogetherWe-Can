@@ -15,7 +15,7 @@ if(!$member) {
     exit();
 }
 
-// Get savings summary
+// Get savings summary here
 $savings = $pdo->prepare("SELECT SUM(amount) as total, COUNT(*) as count FROM savings WHERE member_id = ? AND transaction_type = 'deposit'");
 $savings->execute([$member_id]);
 $savings_data = $savings->fetch();
