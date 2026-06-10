@@ -3,8 +3,8 @@ require_once '../includes/auth.php';
 requireRole('cashier');
 
 // Get today's stats
-$today_deposits = $pdo->query("SELECT SUM(amount) as total FROM savings WHERE DATE(transaction_date) = CURDATE() AND transaction_type='deposit'")->fetch()['total'] ?? 0;
-$today_payments = $pdo->query("SELECT SUM(amount) as total FROM loan_payments WHERE DATE(payment_date) = CURDATE()")->fetch()['total'] ?? 0;
+$today_deposits = $pdo->query("SELECT SUM(amount) as total FROM savings WHERE DATE(transaction_date) = CURRENT_DATE AND transaction_type='deposit'")->fetch()['total'] ?? 0;
+$today_payments = $pdo->query("SELECT SUM(amount) as total FROM loan_payments WHERE DATE(payment_date) = CURRENT_DATE")->fetch()['total'] ?? 0;
 $pending_loans = $pdo->query("SELECT COUNT(*) FROM loans WHERE status='pending'")->fetchColumn();
 
 // Get recent transactions (limited to 5)

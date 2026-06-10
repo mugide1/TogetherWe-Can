@@ -1,8 +1,7 @@
 <?php
+require_once 'config/db.php';
+
 try {
-    $pdo = new PDO("mysql:host=localhost;dbname=together_sacco", "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
     echo "<h2>Creating Users for SACCO System</h2>";
     
     // Clear existing users

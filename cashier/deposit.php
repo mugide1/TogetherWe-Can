@@ -119,7 +119,7 @@ if (isset($_GET['success'])) {
                                 SELECT s.*, m.full_name 
                                 FROM savings s 
                                 JOIN members m ON s.member_id = m.id 
-                                WHERE DATE(s.transaction_date) = CURDATE() 
+                                WHERE DATE(s.transaction_date) = CURRENT_DATE 
                                 ORDER BY s.id DESC LIMIT 10
                             ")->fetchAll();
                             foreach($today as $t):
