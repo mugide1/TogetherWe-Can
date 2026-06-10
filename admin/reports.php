@@ -5,7 +5,7 @@ require_once '../includes/excel_export.php';
 require_once '../includes/pdf_export.php';  // Add this line
 requireRole('admin');
 
-// Check for PDF export
+// Check for PDF exports
 if(isset($_GET['pdf']) && isset($_GET['type'])) {
     $export_type = $_GET['type'];
     $start_date = $_GET['start_date'] ?? date('Y-m-01');
