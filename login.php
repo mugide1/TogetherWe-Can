@@ -139,6 +139,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 0.92rem;
             color: #6c757d;
         }
+        .password-wrapper {
+            position: relative;
+        }
+        .password-toggle-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            padding: 5px;
+            font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s ease;
+        }
+        .password-toggle-btn:hover {
+            color: #0066cc;
+        }
+        .password-input-field {
+            padding-right: 40px;
+        }
         @media (max-width: 575.98px) {
             .login-wrapper {
                 padding: 1.25rem 0;
@@ -173,7 +198,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Password</label>
-                        <input type="password" name="password" class="form-control" required>
+                        <div class="password-wrapper">
+                            <input type="password" name="password" id="passwordField" class="form-control password-input-field" required>
+                            <button type="button" class="password-toggle-btn" id="passwordToggleBtn">
+                                <span id="toggleIcon">👁️</span>
+                            </button>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary w-100 login-btn">Login</button>
                 </form>
@@ -184,5 +214,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </div>
+
+    <script>
+        const passwordField = document.getElementById('passwordField');
+        const passwordToggleBtn = document.getElementById('passwordToggleBtn');
+        const toggleIcon = document.getElementById('toggleIcon');
+
+        passwordToggleBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            if (passwordField.type === 'password') {
+                passwordField.type = 'text';
+                toggleIcon.textContent = '🙈';
+            } else {
+                passwordField.type = 'password';
+                toggleIcon.textContent = '👁️';
+            }
+        });
+    </script>
 </body>
 </html>

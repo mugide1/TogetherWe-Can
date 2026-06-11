@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($current) {
                 // Update existing ledger with loan information
                 $new_loan_out = ($current['loan_out'] ?? 0) + $loan_data['loan_amount'];
-                $new_loan_balance = ($current['loan_balance'] ?? 0) + $loan_data['total_payable'];
+                $new_loan_balance = ($current['loan_balance'] ?? 0) + $loan_data['loan_amount'];
                 
                 $update = $pdo->prepare("UPDATE ledger SET 
                     loan_out = ?,
@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $insert->execute([
                     $loan_data['member_id'],
                     $loan_data['loan_amount'],
-                    $loan_data['total_payable'],
+                    $loan_data['loan_amount'],
                     date('Y-m-d'),
                     'Loan disbursed: ' . number_format($loan_data['loan_amount'], 2)
                 ]);

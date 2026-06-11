@@ -2,7 +2,7 @@
 require_once '../config/db.php';
 require_once '../includes/auth.php';
 require_once '../includes/excel_export.php';
-require_once '../includes/pdf_export.php';  // Add this line
+require_once '../includes/pdf_export.php';
 requireRole('admin');
 
 // Check for PDF exports
@@ -30,12 +30,13 @@ if(isset($_GET['pdf']) && isset($_GET['type'])) {
         generatePDFReport($data, 'loans', $start_date, $end_date);
     }
     elseif($export_type == 'savings') {
+        // ✅ FIXED: Added all non-aggregated columns to GROUP BY
         $data = $pdo->query("
-            SELECT m.full_name, SUM(s.amount) as total_saved, COUNT(s.id) as transactions
+            SELECT m.full_name, m.member_number, SUM(s.amount) as total_saved, COUNT(s.id) as transactions
             FROM savings s
             JOIN members m ON s.member_id = m.id
             WHERE s.transaction_type = 'deposit'
-            GROUP BY s.member_id
+            GROUP BY m.id, m.full_name, m.member_number
             ORDER BY total_saved DESC
         ")->fetchAll();
         generatePDFReport($data, 'savings', $start_date, $end_date);
@@ -102,17 +103,35 @@ $report_type = $_GET['report_type'] ?? 'summary';
 <!-- Report Content with Export Buttons -->
 <?php if($report_type == 'summary'): ?>
     <?php
-    $total_members = $pdo->query("SELECT COUNT(*) FROM members")->fetchColumn();
-    $active_members = $pdo->query("SELECT COUNT(*) FROM members WHERE status='active'")->fetchColumn();
-    $total_savings = $pdo->query("SELECT SUM(amount) as total FROM savings WHERE transaction_type='deposit' AND transaction_date BETWEEN '$start_date' AND '$end_date'")->fetch()['total'] ?? 0;
-    $total_loans = $pdo->query("SELECT SUM(loan_amount) as total FROM loans WHERE status='disbursed' AND issue_date BETWEEN '$start_date' AND '$end_date'")->fetch()['total'] ?? 0;
-    $total_repayments = $pdo->query("SELECT SUM(amount) as total FROM loan_payments WHERE payment_date BETWEEN '$start_date' AND '$end_date'")->fetch()['total'] ?? 0;
-    $outstanding_loans = $pdo->query("SELECT SUM(balance) as total FROM loans WHERE status='disbursed'")->fetch()['total'] ?? 0;
+    // ✅ FIXED: Using prepared statements for security and compatibility
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM members");
+    $stmt->execute();
+    $total_members = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM members WHERE status='active'");
+    $stmt->execute();
+    $active_members = $stmt->fetchColumn();
+    
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM savings WHERE transaction_type='deposit' AND transaction_date BETWEEN ? AND ?");
+    $stmt->execute([$start_date, $end_date]);
+    $total_savings = $stmt->fetch()['total'] ?? 0;
+    
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(loan_amount), 0) as total FROM loans WHERE status='disbursed' AND issue_date BETWEEN ? AND ?");
+    $stmt->execute([$start_date, $end_date]);
+    $total_loans = $stmt->fetch()['total'] ?? 0;
+    
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM loan_payments WHERE payment_date BETWEEN ? AND ?");
+    $stmt->execute([$start_date, $end_date]);
+    $total_repayments = $stmt->fetch()['total'] ?? 0;
+    
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(balance), 0) as total FROM loans WHERE status='disbursed'");
+    $stmt->execute();
+    $outstanding_loans = $stmt->fetch()['total'] ?? 0;
     ?>
     
     <div class="card">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <span>Summary Report</span>
+            <span>Summary Report (<?= date('d/m/Y', strtotime($start_date)) ?> - <?= date('d/m/Y', strtotime($end_date)) ?>)</span>
             <div>
                 <a href="?pdf=1&type=summary&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" class="btn btn-sm btn-danger me-2">
                     <i class="fas fa-file-pdf"></i> PDF
@@ -156,13 +175,16 @@ $report_type = $_GET['report_type'] ?? 'summary';
 
 <?php elseif($report_type == 'members'): ?>
     <?php
-    $members_data = $pdo->query("
+    // ✅ FIXED: Using prepared statements
+    $stmt = $pdo->prepare("
         SELECT m.*, 
-               (SELECT SUM(amount) FROM savings WHERE member_id = m.id AND transaction_type='deposit') as total_savings,
-               (SELECT SUM(balance) FROM loans WHERE member_id = m.id AND status='disbursed') as loan_balance
+               COALESCE((SELECT SUM(amount) FROM savings WHERE member_id = m.id AND transaction_type='deposit'), 0) as total_savings,
+               COALESCE((SELECT SUM(balance) FROM loans WHERE member_id = m.id AND status='disbursed'), 0) as loan_balance
         FROM members m
         ORDER BY m.registration_date DESC
-    ")->fetchAll();
+    ");
+    $stmt->execute();
+    $members_data = $stmt->fetchAll();
     ?>
     
     <div class="card">
@@ -189,12 +211,12 @@ $report_type = $_GET['report_type'] ?? 'summary';
                     <tbody>
                         <?php foreach($members_data as $row): ?>
                         <tr>
-                            <td><?= $row['member_number'] ?></td>
+                            <td><?= htmlspecialchars($row['member_number']) ?></td>
                             <td><?= htmlspecialchars($row['full_name']) ?></td>
-                            <td><?= $row['phone'] ?></td>
+                            <td><?= htmlspecialchars($row['phone'] ?? '') ?></td>
                             <td class="text-end">UGX <?= number_format($row['total_savings'] ?? 0, 2) ?></td>
                             <td class="text-end">UGX <?= number_format($row['loan_balance'] ?? 0, 2) ?></td>
-                            <td><?= $row['status'] ?></td>
+                            <td><?= htmlspecialchars($row['status']) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -205,18 +227,21 @@ $report_type = $_GET['report_type'] ?? 'summary';
 
 <?php elseif($report_type == 'loans'): ?>
     <?php
-    $loans_data = $pdo->query("
+    // ✅ FIXED: Using prepared statements
+    $stmt = $pdo->prepare("
         SELECT m.full_name, m.member_number, l.loan_amount, l.amount_paid, l.balance, l.status, l.issue_date
         FROM loans l
         JOIN members m ON l.member_id = m.id
-        WHERE l.issue_date BETWEEN '$start_date' AND '$end_date'
+        WHERE l.issue_date BETWEEN ? AND ?
         ORDER BY l.issue_date DESC
-    ")->fetchAll();
+    ");
+    $stmt->execute([$start_date, $end_date]);
+    $loans_data = $stmt->fetchAll();
     ?>
     
     <div class="card">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <span>Loans Report</span>
+            <span>Loans Report (<?= date('d/m/Y', strtotime($start_date)) ?> - <?= date('d/m/Y', strtotime($end_date)) ?>)</span>
             <div>
                 <a href="?pdf=1&type=loans&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" class="btn btn-sm btn-danger me-2">
                     <i class="fas fa-file-pdf"></i> PDF
@@ -237,11 +262,11 @@ $report_type = $_GET['report_type'] ?? 'summary';
                     <tbody>
                         <?php foreach($loans_data as $row): ?>
                         <tr>
-                            <td><?= htmlspecialchars($row['full_name']) ?> <br><small><?= $row['member_number'] ?></small></td>
+                            <td><?= htmlspecialchars($row['full_name']) ?> <br><small><?= htmlspecialchars($row['member_number']) ?></small></td>
                             <td class="text-end">UGX <?= number_format($row['loan_amount'], 2) ?></td>
                             <td class="text-end">UGX <?= number_format($row['amount_paid'], 2) ?></td>
                             <td class="text-end">UGX <?= number_format($row['balance'], 2) ?></td>
-                            <td><?= $row['status'] ?></td>
+                            <td><?= htmlspecialchars($row['status']) ?></td>
                             <td><?= date('d/m/Y', strtotime($row['issue_date'])) ?></td>
                         </tr>
                         <?php endforeach; ?>
@@ -253,19 +278,22 @@ $report_type = $_GET['report_type'] ?? 'summary';
 
 <?php elseif($report_type == 'savings'): ?>
     <?php
-    $savings_data = $pdo->query("
-        SELECT m.full_name, m.member_number, SUM(s.amount) as total_saved, COUNT(s.id) as transactions
+    // ✅ FIXED: GROUP BY includes all non-aggregated columns - works on BOTH MySQL and PostgreSQL
+    $stmt = $pdo->prepare("
+        SELECT m.full_name, m.member_number, COALESCE(SUM(s.amount), 0) as total_saved, COUNT(s.id) as transactions
         FROM savings s
         JOIN members m ON s.member_id = m.id
-        WHERE s.transaction_type = 'deposit' AND s.transaction_date BETWEEN '$start_date' AND '$end_date'
-        GROUP BY s.member_id
+        WHERE s.transaction_type = 'deposit' AND s.transaction_date BETWEEN ? AND ?
+        GROUP BY m.id, m.full_name, m.member_number
         ORDER BY total_saved DESC
-    ")->fetchAll();
+    ");
+    $stmt->execute([$start_date, $end_date]);
+    $savings_data = $stmt->fetchAll();
     ?>
     
     <div class="card">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <span>Savings Report</span>
+            <span>Savings Report (<?= date('d/m/Y', strtotime($start_date)) ?> - <?= date('d/m/Y', strtotime($end_date)) ?>)</span>
             <div>
                 <a href="?pdf=1&type=savings&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" class="btn btn-sm btn-danger me-2">
                     <i class="fas fa-file-pdf"></i> PDF
@@ -282,13 +310,19 @@ $report_type = $_GET['report_type'] ?? 'summary';
                         <tr><th>Member</th><th>Total Saved</th><th>Transactions</th></tr>
                     </thead>
                     <tbody>
-                        <?php foreach($savings_data as $row): ?>
-                        <tr>
-                            <td><?= htmlspecialchars($row['full_name']) ?> <br><small><?= $row['member_number'] ?></small></td>
-                            <td class="text-end">UGX <?= number_format($row['total_saved'], 2) ?></td>
-                            <td class="text-center"><?= $row['transactions'] ?></td>
-                        </tr>
-                        <?php endforeach; ?>
+                        <?php if(count($savings_data) > 0): ?>
+                            <?php foreach($savings_data as $row): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($row['full_name']) ?> <br><small><?= htmlspecialchars($row['member_number']) ?></small></td>
+                                <td class="text-end">UGX <?= number_format($row['total_saved'], 2) ?></td>
+                                <td class="text-center"><?= $row['transactions'] ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="3" class="text-center">No savings records found for this period</td>
+                            </tr>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
