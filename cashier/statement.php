@@ -11,40 +11,47 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $month = $_POST['month'];
     $year = $_POST['year'];
     
-    // Get member info - removed guarantor_name
+    // Get member info
     $member_stmt = $pdo->prepare("SELECT id, member_number, full_name, phone, email, address, registration_date, status FROM members WHERE id = ?");
     $member_stmt->execute([$member_id]);
     $member_info = $member_stmt->fetch();
     
+    // ✅ FIXED: Use EXTRACT for PostgreSQL compatibility
     // Get savings for the month
     $savings_stmt = $pdo->prepare("
-        SELECT SUM(amount) as total_savings, COUNT(*) as transactions 
+        SELECT COALESCE(SUM(amount), 0) as total_savings, COUNT(*) as transactions 
         FROM savings 
-        WHERE member_id = ? AND MONTH(transaction_date) = ? AND YEAR(transaction_date) = ? AND transaction_type = 'deposit'
+        WHERE member_id = ? 
+        AND EXTRACT(MONTH FROM transaction_date) = ? 
+        AND EXTRACT(YEAR FROM transaction_date) = ? 
+        AND transaction_type = 'deposit'
     ");
     $savings_stmt->execute([$member_id, $month, $year]);
     $savings_data = $savings_stmt->fetch();
     
+    // ✅ FIXED: Use EXTRACT for PostgreSQL compatibility
     // Get loan payments for the month
     $payments_stmt = $pdo->prepare("
-        SELECT SUM(lp.amount) as total_paid, SUM(lp.interest_paid) as interest_paid
+        SELECT COALESCE(SUM(lp.amount), 0) as total_paid, COALESCE(SUM(lp.interest_paid), 0) as interest_paid
         FROM loan_payments lp
         JOIN loans l ON lp.loan_id = l.id
-        WHERE l.member_id = ? AND MONTH(lp.payment_date) = ? AND YEAR(lp.payment_date) = ?
+        WHERE l.member_id = ? 
+        AND EXTRACT(MONTH FROM lp.payment_date) = ? 
+        AND EXTRACT(YEAR FROM lp.payment_date) = ?
     ");
     $payments_stmt->execute([$member_id, $month, $year]);
     $payments_data = $payments_stmt->fetch();
     
     // Get current balances
-    $total_savings_all = $pdo->prepare("SELECT SUM(amount) as total FROM savings WHERE member_id = ? AND transaction_type='deposit'");
+    $total_savings_all = $pdo->prepare("SELECT COALESCE(SUM(amount), 0) as total FROM savings WHERE member_id = ? AND transaction_type='deposit'");
     $total_savings_all->execute([$member_id]);
     $total_savings = $total_savings_all->fetch()['total'] ?? 0;
     
-    $loan_balance = $pdo->prepare("SELECT balance FROM loans WHERE member_id = ? AND status='disbursed' ORDER BY id DESC LIMIT 1");
+    $loan_balance = $pdo->prepare("SELECT COALESCE(balance, 0) as balance FROM loans WHERE member_id = ? AND status='disbursed' ORDER BY id DESC LIMIT 1");
     $loan_balance->execute([$member_id]);
     $current_loan_balance = $loan_balance->fetch()['balance'] ?? 0;
     
-    // Get guarantor from ledger instead of members
+    // Get guarantor from ledger
     $guarantor_stmt = $pdo->prepare("SELECT guarantor_name FROM ledger WHERE member_id = ? AND guarantor_name IS NOT NULL AND guarantor_name != '' ORDER BY id DESC LIMIT 1");
     $guarantor_stmt->execute([$member_id]);
     $guarantor_data = $guarantor_stmt->fetch();
@@ -78,33 +85,33 @@ $members = $pdo->query("SELECT id, member_number, full_name FROM members WHERE s
                         <select name="member_id" class="form-control" required>
                             <option value="">-- Select Member --</option>
                             <?php foreach($members as $m): ?>
-                            <option value="<?= $m['id'] ?>"><?= $m['member_number'] ?> - <?= htmlspecialchars($m['full_name']) ?></option>
+                            <option value="<?= $m['id'] ?>"><?= htmlspecialchars($m['member_number']) ?> - <?= htmlspecialchars($m['full_name']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
                     <div class="mb-3">
                         <label>Month</label>
                         <select name="month" class="form-control" required>
-                            <option value="1">January</option>
-                            <option value="2">February</option>
-                            <option value="3">March</option>
-                            <option value="4">April</option>
-                            <option value="5">May</option>
-                            <option value="6">June</option>
-                            <option value="7">July</option>
-                            <option value="8">August</option>
-                            <option value="9">September</option>
-                            <option value="10">October</option>
-                            <option value="11">November</option>
-                            <option value="12">December</option>
+                            <option value="1" <?= ($_POST['month'] ?? '') == 1 ? 'selected' : '' ?>>January</option>
+                            <option value="2" <?= ($_POST['month'] ?? '') == 2 ? 'selected' : '' ?>>February</option>
+                            <option value="3" <?= ($_POST['month'] ?? '') == 3 ? 'selected' : '' ?>>March</option>
+                            <option value="4" <?= ($_POST['month'] ?? '') == 4 ? 'selected' : '' ?>>April</option>
+                            <option value="5" <?= ($_POST['month'] ?? '') == 5 ? 'selected' : '' ?>>May</option>
+                            <option value="6" <?= ($_POST['month'] ?? '') == 6 ? 'selected' : '' ?>>June</option>
+                            <option value="7" <?= ($_POST['month'] ?? '') == 7 ? 'selected' : '' ?>>July</option>
+                            <option value="8" <?= ($_POST['month'] ?? '') == 8 ? 'selected' : '' ?>>August</option>
+                            <option value="9" <?= ($_POST['month'] ?? '') == 9 ? 'selected' : '' ?>>September</option>
+                            <option value="10" <?= ($_POST['month'] ?? '') == 10 ? 'selected' : '' ?>>October</option>
+                            <option value="11" <?= ($_POST['month'] ?? '') == 11 ? 'selected' : '' ?>>November</option>
+                            <option value="12" <?= ($_POST['month'] ?? '') == 12 ? 'selected' : '' ?>>December</option>
                         </select>
                     </div>
                     <div class="mb-3">
                         <label>Year</label>
                         <select name="year" class="form-control" required>
-                            <option value="2024">2024</option>
-                            <option value="2025">2025</option>
-                            <option value="2026">2026</option>
+                            <option value="2024" <?= ($_POST['year'] ?? '') == 2024 ? 'selected' : '' ?>>2024</option>
+                            <option value="2025" <?= ($_POST['year'] ?? '') == 2025 ? 'selected' : '' ?>>2025</option>
+                            <option value="2026" <?= ($_POST['year'] ?? '') == 2026 ? 'selected' : '' ?>>2026</option>
                         </select>
                     </div>
                     <button type="submit" class="btn btn-primary w-100">Generate Statement</button>
@@ -125,8 +132,8 @@ $members = $pdo->query("SELECT id, member_number, full_name FROM members WHERE s
                 <div class="row mb-4">
                     <div class="col-md-6">
                         <strong>Member Name:</strong> <?= htmlspecialchars($member_info['full_name']) ?><br>
-                        <strong>Member Number:</strong> <?= $member_info['member_number'] ?><br>
-                        <strong>Phone:</strong> <?= $member_info['phone'] ?>
+                        <strong>Member Number:</strong> <?= htmlspecialchars($member_info['member_number']) ?><br>
+                        <strong>Phone:</strong> <?= htmlspecialchars($member_info['phone'] ?? 'N/A') ?>
                     </div>
                     <div class="col-md-6">
                         <strong>Guarantor:</strong> <?= htmlspecialchars($statement_data['guarantor']) ?><br>
