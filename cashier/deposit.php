@@ -106,33 +106,41 @@ if (isset($_GET['success'])) {
     
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header bg-info text-white">Today's Transactions</div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr><th>Member</th><th>Amount</th><th>Time</th></tr>
-                        </thead>
-                        <tbody>
-                            <?php
-                            $today = $pdo->query("
-                                SELECT s.*, m.full_name 
-                                FROM savings s 
-                                JOIN members m ON s.member_id = m.id 
-                                WHERE DATE(s.transaction_date) = CURRENT_DATE 
-                                ORDER BY s.id DESC LIMIT 10
-                            ")->fetchAll();
-                            foreach($today as $t):
-                            ?>
-                            <tr>
-                                <td><?= htmlspecialchars($t['full_name']) ?></td>
-                                <td class="text-end">UGX <?= number_format($t['amount'], 2) ?></td>
-                                <td><?= date('H:i', strtotime($t['transaction_date'])) ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+            <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-exchange-alt"></i> Today's Transactions</span>
+                <small class="badge bg-light text-dark">
+                    <?php $today = $pdo->query("
+                        SELECT s.*, m.full_name 
+                        FROM savings s 
+                        JOIN members m ON s.member_id = m.id 
+                        WHERE DATE(s.transaction_date) = CURRENT_DATE 
+                        ORDER BY s.id DESC LIMIT 10
+                    ")->fetchAll(); echo count($today); ?>
+                </small>
+            </div>
+            <div class="card-body p-0">
+                <?php if(empty($today)): ?>
+                <div class="alert alert-secondary m-3 mb-0 text-center">
+                    <i class="fas fa-inbox"></i> No transactions yet today
                 </div>
+                <?php else: ?>
+                <div class="transaction-list">
+                    <?php foreach($today as $t): ?>
+                    <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+                        <div class="flex-grow-1">
+                            <strong><?= htmlspecialchars($t['full_name']) ?></strong>
+                            <br>
+                            <small class="text-muted">
+                                <i class="fas fa-clock"></i> <?= date('H:i', strtotime($t['transaction_date'])) ?>
+                            </small>
+                        </div>
+                        <div class="text-end ms-2">
+                            <span class="badge bg-success fs-6">UGX <?= number_format($t['amount'], 0) ?></span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

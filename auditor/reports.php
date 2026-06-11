@@ -1,5 +1,5 @@
 <?php
-
+require_once '../config/db.php';
 require_once '../includes/auth.php';
 requireRole('auditor');  // This should allow auditor role, not admin
 ?>
@@ -13,11 +13,11 @@ requireRole('auditor');  // This should allow auditor role, not admin
     $total_members = $pdo->query("SELECT COUNT(*) FROM members")->fetchColumn();
     $active_members = $pdo->query("SELECT COUNT(*) FROM members WHERE status='active'")->fetchColumn();
     
-    $total_savings = $pdo->query("SELECT SUM(amount) as total FROM savings WHERE transaction_type='deposit'")->fetch()['total'] ?? 0;
-    $total_loans_disbursed = $pdo->query("SELECT SUM(loan_amount) as total FROM loans WHERE status='disbursed'")->fetch()['total'] ?? 0;
-    $total_interest_collected = $pdo->query("SELECT SUM(interest_paid) as total FROM loan_payments")->fetch()['total'] ?? 0;
-    $outstanding_loans = $pdo->query("SELECT SUM(balance) as total FROM loans WHERE status='disbursed'")->fetch()['total'] ?? 0;
-    $total_repayments = $pdo->query("SELECT SUM(amount) as total FROM loan_payments")->fetch()['total'] ?? 0;
+    $total_savings = $pdo->query("SELECT COALESCE(SUM(amount), 0) as total FROM savings WHERE transaction_type='deposit'")->fetch()['total'] ?? 0;
+    $total_loans_disbursed = $pdo->query("SELECT COALESCE(SUM(loan_amount), 0) as total FROM loans WHERE status='disbursed'")->fetch()['total'] ?? 0;
+    $total_interest_collected = $pdo->query("SELECT COALESCE(SUM(interest_paid), 0) as total FROM loan_payments")->fetch()['total'] ?? 0;
+    $outstanding_loans = $pdo->query("SELECT COALESCE(SUM(balance), 0) as total FROM loans WHERE status='disbursed'")->fetch()['total'] ?? 0;
+    $total_repayments = $pdo->query("SELECT COALESCE(SUM(amount), 0) as total FROM loan_payments")->fetch()['total'] ?? 0;
     ?>
     
     <div class="col-md-4">
@@ -79,27 +79,46 @@ requireRole('auditor');  // This should allow auditor role, not admin
 <div class="row mt-4">
     <div class="col-md-12">
         <div class="card">
-            <div class="card-header bg-dark text-white">
-                <i class="fas fa-history"></i> Recent Activity Log
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-history"></i> Recent Activity Log</span>
+                <div class="col-md-3">
+                    <select id="filterUser" class="form-select form-select-sm bg-dark text-white border-light">
+                        <option value="all">All Users</option>
+                        <?php
+                        // Get users for filter dropdown
+                        $users = $pdo->query("SELECT id, username, full_name, role FROM users WHERE is_active = 1 ORDER BY full_name")->fetchAll();
+                        foreach($users as $user):
+                        ?>
+                        <option value="<?= $user['username'] ?>"><?= htmlspecialchars($user['full_name'] ?? $user['username']) ?> (<?= $user['role'] ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered" id="logTable">
                         <thead class="table-light">
-                            <tr><th>User</th><th>Action</th><th>Timestamp</th></tr>
+                            <tr>
+                                <th>User</th>
+                                <th>Role</th>
+                                <th>Action</th>
+                                <th>Timestamp</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <?php
+                            // ✅ FIXED: Added role to the query
                             $logs = $pdo->query("
-                                SELECT l.*, u.username 
+                                SELECT l.*, u.username, u.full_name, u.role 
                                 FROM activity_logs l 
                                 JOIN users u ON l.user_id = u.id 
-                                ORDER BY l.id DESC LIMIT 50
+                                ORDER BY l.id DESC LIMIT 200
                             ")->fetchAll();
                             foreach($logs as $log):
                             ?>
                             <tr>
-                                <td><?= htmlspecialchars($log['username']) ?></td>
+                                <td><?= htmlspecialchars($log['full_name'] ?? $log['username']) ?></td>
+                                <td><span class="badge bg-secondary"><?= htmlspecialchars($log['role']) ?></span></td>
                                 <td><?= htmlspecialchars($log['action']) ?></td>
                                 <td><?= date('d/m/Y H:i:s', strtotime($log['timestamp'])) ?></td>
                             </tr>
@@ -122,12 +141,19 @@ requireRole('auditor');  // This should allow auditor role, not admin
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered">
                         <thead class="table-light">
-                            <tr><th>Member</th><th>Loan Amount</th><th>Paid</th><th>Balance</th><th>Status</th></tr>
+                            <tr>
+                                <th>Member</th>
+                                <th>Member No</th>
+                                <th>Loan Amount</th>
+                                <th>Paid</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <?php
                             $loans = $pdo->query("
-                                SELECT l.*, m.full_name 
+                                SELECT l.*, m.full_name, m.member_number
                                 FROM loans l 
                                 JOIN members m ON l.member_id = m.id 
                                 WHERE l.status IN ('disbursed', 'approved')
@@ -137,6 +163,7 @@ requireRole('auditor');  // This should allow auditor role, not admin
                             ?>
                             <tr>
                                 <td><?= htmlspecialchars($loan['full_name']) ?></td>
+                                <td><?= htmlspecialchars($loan['member_number']) ?></td>
                                 <td class="text-end">UGX <?= number_format($loan['loan_amount'], 2) ?></td>
                                 <td class="text-end">UGX <?= number_format($loan['amount_paid'], 2) ?></td>
                                 <td class="text-end">UGX <?= number_format($loan['balance'], 2) ?></td>
@@ -163,24 +190,82 @@ requireRole('auditor');  // This should allow auditor role, not admin
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered">
                         <thead class="table-light">
-                            <tr><th>Member</th><th>Total Savings</th></tr>
+                            <tr>
+                                <th>Member No</th>
+                                <th>Member Name</th>
+                                <th>Total Savings</th>
+                            </tr>
                         </thead>
                         <tbody>
                             <?php
+                            // ✅ FIXED: GROUP BY includes all non-aggregated columns for PostgreSQL
                             $top_savers = $pdo->query("
-                                SELECT m.full_name, SUM(s.amount) as total_savings
+                                SELECT m.member_number, m.full_name, COALESCE(SUM(s.amount), 0) as total_savings
                                 FROM savings s
                                 JOIN members m ON s.member_id = m.id
                                 WHERE s.transaction_type = 'deposit'
-                                GROUP BY s.member_id
+                                GROUP BY m.id, m.member_number, m.full_name
                                 ORDER BY total_savings DESC
                                 LIMIT 10
                             ")->fetchAll();
                             foreach($top_savers as $saver):
                             ?>
                             <tr>
+                                <td><?= htmlspecialchars($saver['member_number']) ?></td>
                                 <td><?= htmlspecialchars($saver['full_name']) ?></td>
                                 <td class="text-end">UGX <?= number_format($saver['total_savings'], 2) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <i class="fas fa-chart-line"></i> Monthly Trends
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Month</th>
+                                <th>Total Savings</th>
+                                <th>Loan Disbursements</th>
+                                <th>Loan Repayments</th>
+                                <th>Interest Collected</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php
+                            // ✅ FIXED: Using EXTRACT for PostgreSQL compatibility
+                            $monthly_trends = $pdo->query("
+                                SELECT 
+                                    EXTRACT(YEAR FROM transaction_date) as year,
+                                    EXTRACT(MONTH FROM transaction_date) as month,
+                                    SUM(amount) as total_savings
+                                FROM savings
+                                WHERE transaction_type = 'deposit'
+                                GROUP BY EXTRACT(YEAR FROM transaction_date), EXTRACT(MONTH FROM transaction_date)
+                                ORDER BY year DESC, month DESC
+                                LIMIT 6
+                            ")->fetchAll();
+                            
+                            foreach($monthly_trends as $trend):
+                                $month_name = date('F', mktime(0,0,0,$trend['month'],1));
+                            ?>
+                            <tr>
+                                <td><?= $month_name ?> <?= $trend['year'] ?></td>
+                                <td class="text-end">UGX <?= number_format($trend['total_savings'], 2) ?></td>
+                                <td class="text-end">-</td>
+                                <td class="text-end">-</td>
+                                <td class="text-end">-</td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -203,15 +288,29 @@ requireRole('auditor');  // This should allow auditor role, not admin
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
 <script>
 $(document).ready(function() {
-    $('#logTable').DataTable({
+    // Initialize DataTable with filtering
+    var table = $('#logTable').DataTable({
         pageLength: 25,
-        order: [[2, 'desc']]
+        order: [[3, 'desc']], // Order by timestamp column (index 3)
+        language: {
+            search: "Filter logs:"
+        }
+    });
+    
+    // Add user filter functionality
+    $('#filterUser').on('change', function() {
+        var user = $(this).val();
+        if (user === 'all') {
+            table.column(0).search('').draw();
+        } else {
+            table.column(0).search('^' + user + '$', true, false).draw();
+        }
     });
 });
 </script>
 
 <style media="print">
-    .sidebar, .card-header .btn, .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_paginate, .btn {
+    .sidebar, .card-header .btn, .dataTables_length, .dataTables_filter, .dataTables_info, .dataTables_paginate, .btn, #filterUser {
         display: none !important;
     }
     .col-md-2 {
@@ -223,6 +322,9 @@ $(document).ready(function() {
     .card {
         border: none;
         break-inside: avoid;
+    }
+    .badge {
+        border: 1px solid #000;
     }
 </style>
 
