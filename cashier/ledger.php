@@ -3,16 +3,33 @@ require_once '../config/db.php';
 require_once '../includes/auth.php';
 requireRole('cashier');
 
-// Get the latest ledger entry for each member
-$ledger_entries = $pdo->query("
+// ✅ FIXED: PostgreSQL-compatible query to get latest ledger entry for each member
+$stmt = $pdo->prepare("
     SELECT l.*, m.full_name, m.member_number
     FROM ledger l
     JOIN members m ON l.member_id = m.id
     WHERE l.id IN (
-        SELECT MAX(id) FROM ledger GROUP BY member_id
+        SELECT MAX(id) 
+        FROM ledger 
+        GROUP BY member_id
     )
     ORDER BY m.full_name ASC
-")->fetchAll();
+");
+$stmt->execute();
+$ledger_entries = $stmt->fetchAll();
+
+// Alternative approach if the above still gives issues (more explicit):
+// $stmt = $pdo->prepare("
+//     SELECT l.*, m.full_name, m.member_number
+//     FROM ledger l
+//     JOIN members m ON l.member_id = m.id
+//     JOIN (
+//         SELECT member_id, MAX(id) as max_id
+//         FROM ledger
+//         GROUP BY member_id
+//     ) latest ON l.id = latest.max_id
+//     ORDER BY m.full_name ASC
+// ");
 ?>
 <!DOCTYPE html>
 <html>
@@ -63,7 +80,7 @@ $ledger_entries = $pdo->query("
                 ?>
                 <tr>
                     <td><?= $serial++ ?></td>
-                    <td><?= $row['member_number'] ?></td>
+                    <td><?= htmlspecialchars($row['member_number']) ?></td>
                     <td><?= htmlspecialchars($row['full_name']) ?></td>
                     <td class="text-end"><?= number_format($row['amount_saved'], 2) ?></td>
                     <td class="text-end"><?= number_format($row['loan_out'], 2) ?></td>
@@ -71,7 +88,7 @@ $ledger_entries = $pdo->query("
                     <td class="text-end"><?= number_format($row['loan_payment'], 2) ?></td>
                     <td class="text-end <?= $row['loan_balance'] > 0 ? 'text-danger fw-bold' : 'text-success' ?>">
                         <?= number_format($row['loan_balance'], 2) ?>
-                    </a>
+                    </td>
                     <td><?= $guarantor ?></td>
                     <td>
                         <?php if($row['loan_balance'] > 0): ?>
@@ -79,22 +96,22 @@ $ledger_entries = $pdo->query("
                         <?php else: ?>
                             <span class="badge bg-success">Clean</span>
                         <?php endif; ?>
-                    </a>
-                </a>
+                    </td>
+                </tr>
                 <?php endforeach; ?>
             </tbody>
             <tfoot class="table-secondary">
                 <tr class="fw-bold">
-                    <td colspan="3" class="text-end">TOTALS:</a>
-                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'amount_saved')), 2) ?></a>
-                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'loan_out')), 2) ?></a>
-                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'interest_paid')), 2) ?></a>
-                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'loan_payment')), 2) ?></a>
-                    <td class="text-end text-danger"><?= number_format(array_sum(array_column($ledger_entries, 'loan_balance')), 2) ?></a>
-                    <td colspan="2"></a>
-                </a>
+                    <td colspan="3" class="text-end">TOTALS:</td>
+                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'amount_saved')), 2) ?></td>
+                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'loan_out')), 2) ?></td>
+                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'interest_paid')), 2) ?></td>
+                    <td class="text-end"><?= number_format(array_sum(array_column($ledger_entries, 'loan_payment')), 2) ?></td>
+                    <td class="text-end text-danger"><?= number_format(array_sum(array_column($ledger_entries, 'loan_balance')), 2) ?></td>
+                    <td colspan="2"></td>
+                </tr>
             </tfoot>
-        </div>
+        </table>
     </div>
     <?php endif; ?>
 </div>
